@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, ArrowLeft, RotateCcw, CheckCircle } from 'lucide-react';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface PasswordResetProps {
   onNavigate: (view: string) => void;
@@ -9,16 +10,23 @@ function PasswordReset({ onNavigate }: PasswordResetProps) {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [error, setError] = useState('');
+  const { resetPassword } = useAuth();
 
   const handlePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setError('');
 
-    // ローカル実装では、実際のメール送信は行わない
-    setTimeout(() => {
+    const result = await resetPassword(email);
+    
+    if (result.success) {
       setIsSuccess(true);
-      setIsLoading(false);
-    }, 1000);
+    } else {
+      setError(result.error || 'パスワードリセットに失敗しました');
+    }
+    
+    setIsLoading(false);
   };
 
   if (isSuccess) {
@@ -74,6 +82,11 @@ function PasswordReset({ onNavigate }: PasswordResetProps) {
           {/* パスワードリセットフォーム */}
           <div className="backdrop-blur-xl bg-white/20 rounded-xl p-8 border border-white/30 shadow-2xl">
             <form onSubmit={handlePasswordReset} className="space-y-6">
+              {error && (
+                <div className="bg-red-50/50 border border-red-200/50 rounded-lg p-4">
+                  <p className="text-red-700 text-sm">{error}</p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
                   メールアドレス

@@ -27,7 +27,7 @@ import ApproverDashboard from './ApproverDashboard';
 import UserManagement from './UserManagement';
 import AdminApplicationList from './AdminApplicationList';
 import AdminApplicationDetail from './AdminApplicationDetail';
-import { useUserProfile } from './UserProfileProvider';
+import { useAuth } from '../contexts/AuthContext';
 
 function Dashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -35,7 +35,7 @@ function Dashboard() {
   const [applicationDetail, setApplicationDetail] = useState<{type: 'business-trip' | 'expense', id: string} | null>(null);
   const [documentType, setDocumentType] = useState<string>('');
   const [documentId, setDocumentId] = useState<string>('');
-  const { userRole } = useUserProfile();
+  const { userRole } = useAuth();
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);

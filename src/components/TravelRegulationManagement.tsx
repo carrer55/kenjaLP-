@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Edit, Trash2, History, Upload, Download, FileText } from 'lucide-react';
+import { Plus, Search, Edit, Trash2, History, Upload, Download, FileText, AlertCircle } from 'lucide-react';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import { useTravelRegulations } from '../hooks/useTravelRegulations';
+import { useAuth } from '../contexts/AuthContext';
 
 interface TravelRegulationManagementProps {
-  onNavigate: (view: 'dashboard' | 'business-trip' | 'expense' | 'tax-simulation' | 'travel-regulation-management' | 'travel-regulation-creation' | 'travel-regulation-history') => void;
+  onNavigate: (view: string) => void;
 }
 
 interface Regulation {
@@ -28,30 +30,42 @@ interface Regulation {
 
 function TravelRegulationManagement({ onNavigate }: TravelRegulationManagementProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [regulations, setRegulations] = useState<Regulation[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  
+  const { user } = useAuth();
+  const { 
+    regulations, 
+    isLoading, 
+    error, 
+    deleteRegulation, 
+    refreshRegulations 
+  } = useTravelRegulations();
 
   useEffect(() => {
-    // ローカルストレージから規程データを読み込み
-    const savedRegulations = JSON.parse(localStorage.getItem('travelRegulations') || '[]');
-    setRegulations(savedRegulations);
-  }, []);
+    if (user) {
+      refreshRegulations();
+    }
+  }, [user]);
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
   };
 
   const filteredRegulations = regulations.filter(regulation =>
-    (regulation.companyName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (regulation.version || '').toLowerCase().includes(searchTerm.toLowerCase())
+    (regulation.company?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (regulation.version || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (regulation.id || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleDelete = (id: string) => {
-    if (confirm('この規程を削除してもよろしいですか？')) {
-      const updatedRegulations = regulations.filter(reg => reg.id !== id);
-      setRegulations(updatedRegulations);
-      localStorage.setItem('travelRegulations', JSON.stringify(updatedRegulations));
+  const handleDelete = async (id: string) => {
+    setShowDeleteConfirm(null);
+    const result = await deleteRegulation(id);
+    if (result.success) {
+      alert('旅費規程が削除されました');
+    } else {
+      alert(`削除に失敗しました: ${result.error}`);
     }
   };
 
@@ -63,54 +77,63 @@ function TravelRegulationManagement({ onNavigate }: TravelRegulationManagementPr
 
   const handleUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file && file.type === 'application/pdf') {
-      // PDFアップロード処理（実際の実装では、サーバーサイドでPDF解析を行う）
-      const newRegulation: Regulation = {
-        id: Date.now().toString(),
-        companyName: `アップロード規程_${file.name}`,
-        version: 'v1.0',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        status: 'draft',
-        domesticAllowance: { executive: 0, manager: 0, general: 0 },
-        overseasAllowance: { executive: 0, manager: 0, general: 0 }
-      };
-      
-      const updatedRegulations = [...regulations, newRegulation];
-      setRegulations(updatedRegulations);
-      localStorage.setItem('travelRegulations', JSON.stringify(updatedRegulations));
+    if (file) {
+      // PDFアップロード処理（実装予定）
+      console.log('PDFファイルが選択されました:', file.name);
       setShowUploadModal(false);
-      alert('PDFファイルがアップロードされました。');
-    } else {
-      alert('PDFファイルを選択してください。');
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'active': return '有効';
+      case 'draft': return '下書き';
+      case 'archived': return 'アーカイブ';
+      default: return status;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active':
-        return 'text-emerald-700 bg-emerald-100';
-      case 'draft':
-        return 'text-amber-700 bg-amber-100';
-      case 'archived':
-        return 'text-slate-700 bg-slate-100';
-      default:
-        return 'text-slate-700 bg-slate-100';
+      case 'active': return 'bg-green-100 text-green-800';
+      case 'draft': return 'bg-yellow-100 text-yellow-800';
+      case 'archived': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'active':
-        return '運用中';
-      case 'draft':
-        return '下書き';
-      case 'archived':
-        return 'アーカイブ';
-      default:
-        return '不明';
-    }
-  };
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative overflow-hidden">
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-navy-600 mx-auto mb-4"></div>
+            <p className="text-slate-600">旅費規程を読み込み中...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative overflow-hidden">
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <p className="text-red-600 mb-4">エラーが発生しました</p>
+            <p className="text-slate-600 mb-4">{error}</p>
+            <button
+              onClick={refreshRegulations}
+              className="px-4 py-2 bg-navy-600 text-white rounded-lg hover:bg-navy-700 transition-colors"
+            >
+              再試行
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative overflow-hidden">
@@ -165,89 +188,91 @@ function TravelRegulationManagement({ onNavigate }: TravelRegulationManagementPr
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
                   <input
                     type="text"
-                    placeholder="規程名やバージョンで検索..."
+                    placeholder="会社名、バージョン、規程名で検索..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 bg-white/50 border border-white/40 rounded-lg text-slate-700 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-navy-400 backdrop-blur-xl"
+                    className="w-full pl-10 pr-4 py-2 bg-white/80 backdrop-blur-sm border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
                   />
                 </div>
               </div>
 
               {/* 規程一覧 */}
-              <div className="backdrop-blur-xl bg-white/20 rounded-xl border border-white/30 shadow-xl overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-white/30 border-b border-white/30">
-                      <tr>
-                        <th className="text-left py-4 px-6 font-medium text-slate-700">会社名</th>
-                        <th className="text-left py-4 px-6 font-medium text-slate-700">バージョン</th>
-                        <th className="text-left py-4 px-6 font-medium text-slate-700">ステータス</th>
-                        <th className="text-left py-4 px-6 font-medium text-slate-700">作成日</th>
-                        <th className="text-left py-4 px-6 font-medium text-slate-700">更新日</th>
-                        <th className="text-left py-4 px-6 font-medium text-slate-700">日当設定</th>
-                        <th className="text-center py-4 px-6 font-medium text-slate-700">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredRegulations.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="text-center py-12 text-slate-500">
-                            {searchTerm ? '検索結果が見つかりません' : '規程が登録されていません'}
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredRegulations.map((regulation) => (
-                          <tr key={regulation.id} className="border-b border-white/20 hover:bg-white/20 transition-colors">
-                            <td className="py-4 px-6 text-slate-800 font-medium">{regulation.companyName}</td>
-                            <td className="py-4 px-6 text-slate-700">{regulation.version}</td>
-                            <td className="py-4 px-6">
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(regulation.status)}`}>
-                                {getStatusText(regulation.status)}
-                              </span>
-                            </td>
-                            <td className="py-4 px-6 text-slate-600 text-sm">
-                              {new Date(regulation.createdAt).toLocaleDateString('ja-JP')}
-                            </td>
-                            <td className="py-4 px-6 text-slate-600 text-sm">
-                              {new Date(regulation.updatedAt).toLocaleDateString('ja-JP')}
-                            </td>
-                            <td className="py-4 px-6 text-slate-600 text-sm">
-                              <div className="space-y-1">
-                                <div>国内: ¥{(regulation.domesticAllowance?.general || 0).toLocaleString()}</div>
-                                <div>海外: ¥{(regulation.overseasAllowance?.general || 0).toLocaleString()}</div>
-                              </div>
-                            </td>
-                            <td className="py-4 px-6">
-                              <div className="flex items-center justify-center space-x-2">
-                                <button
-                                  onClick={() => handleEdit(regulation.id)}
-                                  className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-colors"
-                                  title="編集"
-                                >
-                                  <Edit className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => onNavigate('travel-regulation-history')}
-                                  className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-colors"
-                                  title="履歴"
-                                >
-                                  <History className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleDelete(regulation.id)}
-                                  className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50/30 rounded-lg transition-colors"
-                                  title="削除"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+              <div className="grid gap-6">
+                {filteredRegulations.length === 0 ? (
+                  <div className="text-center py-12">
+                    <FileText className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                    <p className="text-slate-500 text-lg">旅費規程がありません</p>
+                    <p className="text-slate-400">新規作成またはPDFアップロードで規程を追加してください</p>
+                  </div>
+                ) : (
+                  filteredRegulations.map((regulation) => (
+                    <div key={regulation.id} className="backdrop-blur-xl bg-white/20 rounded-xl p-6 border border-white/30 shadow-xl">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2">
+                                                       <h3 className="text-xl font-semibold text-slate-800">
+                             {regulation.version || '無題の規程'}
+                           </h3>
+                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(regulation.status)}`}>
+                              {getStatusLabel(regulation.status)}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-slate-600">
+                            <div>
+                              <span className="font-medium">会社:</span> {regulation.company?.name || '不明'}
+                            </div>
+                            <div>
+                              <span className="font-medium">部署:</span> {regulation.department?.name || '不明'}
+                            </div>
+                            <div>
+                              <span className="font-medium">バージョン:</span> {regulation.version || '不明'}
+                            </div>
+                                                         <div>
+                               <span className="font-medium">施行日:</span> {regulation.established_date ? new Date(regulation.established_date).toLocaleDateString('ja-JP') : '不明'}
+                             </div>
+                             <div>
+                               <span className="font-medium">距離閾値:</span> {regulation.distance_threshold}km
+                             </div>
+                             <div>
+                               <span className="font-medium">準備費:</span> {regulation.use_preparation_fee ? 'あり' : 'なし'}
+                             </div>
+                          </div>
+                        </div>
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleEdit(regulation.id)}
+                            className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-all duration-200"
+                          >
+                            <Edit className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => setShowDeleteConfirm(regulation.id)}
+                            className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-all duration-200"
+                          >
+                            <Trash2 className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm text-slate-500">
+                        <div className="flex items-center space-x-4">
+                          <span>作成日: {new Date(regulation.created_at).toLocaleDateString('ja-JP')}</span>
+                          <span>更新日: {new Date(regulation.updated_at).toLocaleDateString('ja-JP')}</span>
+                        </div>
+                        <div className="flex space-x-2">
+                          <button className="flex items-center space-x-1 px-3 py-1 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-all duration-200">
+                            <History className="w-4 h-4" />
+                            <span>履歴</span>
+                          </button>
+                          <button className="flex items-center space-x-1 px-3 py-1 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-all duration-200">
+                            <Download className="w-4 h-4" />
+                            <span>ダウンロード</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -282,6 +307,30 @@ function TravelRegulationManagement({ onNavigate }: TravelRegulationManagementPr
                 className="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
               >
                 キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 削除確認モーダル */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">削除の確認</h3>
+            <p className="text-slate-600 mb-6">この旅費規程を削除してもよろしいですか？この操作は取り消せません。</p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setShowDeleteConfirm(null)}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={() => handleDelete(showDeleteConfirm)}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                削除
               </button>
             </div>
           </div>

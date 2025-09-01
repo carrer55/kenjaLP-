@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { FileText, Calendar, MapPin, Building, Users, CheckCircle, Clock, AlertTriangle, Plus, Eye, Edit } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { FileText, Calendar, MapPin, Building, Users, CheckCircle, Clock, AlertTriangle, Plus, Eye, Edit, Trash2, AlertCircle, Download } from 'lucide-react';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import { useDocumentManagement } from '../hooks/useDocumentManagement';
+import { useAuth } from '../contexts/AuthContext';
 
 interface DocumentManagementProps {
   onNavigate: (view: string, documentType?: string) => void;
@@ -11,162 +13,155 @@ interface BusinessTrip {
   id: string;
   title: string;
   purpose: string;
+  applicant: string;
+  department: string;
   startDate: string;
   endDate: string;
   location: string;
-  visitTarget: string;
-  companions: string;
-  estimatedAmount: number;
-  status: 'approved' | 'completed';
-  hasReport: boolean;
-  hasExpenseReport: boolean;
-  reportSubmitted: boolean;
-  expenseReportSubmitted: boolean;
+  status: string;
+  amount: number;
+}
+
+interface Expense {
+  id: string;
+  title: string;
+  applicant: string;
+  department: string;
+  submittedDate: string;
+  status: string;
+  amount: number;
+  category: string;
 }
 
 function DocumentManagement({ onNavigate }: DocumentManagementProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [showReportCompleteModal, setShowReportCompleteModal] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [showBusinessTripCompleteModal, setShowBusinessTripCompleteModal] = useState(false);
   const [showExpenseCompleteModal, setShowExpenseCompleteModal] = useState(false);
-  const [currentBusinessTripId, setCurrentBusinessTripId] = useState('');
+  const [selectedDocument, setSelectedDocument] = useState<any>(null);
 
-  // サンプルデータ
-  const [businessTrips, setBusinessTrips] = useState<BusinessTrip[]>([
-    {
-      id: 'BT-2024-001',
-      title: '東京出張',
-      purpose: 'クライアント訪問および新規開拓営業',
-      startDate: '2024-07-25',
-      endDate: '2024-07-27',
-      location: '東京都港区',
-      visitTarget: '株式会社サンプル',
-      companions: '田中部長',
-      estimatedAmount: 52500,
-      status: 'completed',
-      hasReport: false,
-      hasExpenseReport: false,
-      reportSubmitted: false,
-      expenseReportSubmitted: false
-    },
-    {
-      id: 'BT-2024-002',
-      title: '大阪出張',
-      purpose: '支社会議参加',
-      startDate: '2024-07-20',
-      endDate: '2024-07-21',
-      location: '大阪府大阪市',
-      visitTarget: '大阪支社',
-      companions: '',
-      estimatedAmount: 35000,
-      status: 'completed',
-      hasReport: true,
-      hasExpenseReport: false,
-      reportSubmitted: false,
-      expenseReportSubmitted: false
-    },
-    {
-      id: 'BT-2024-003',
-      title: '福岡出張',
-      purpose: '新規事業説明会',
-      startDate: '2024-08-05',
-      endDate: '2024-08-06',
-      location: '福岡県福岡市',
-      visitTarget: '九州商事株式会社',
-      companions: '佐藤課長、鈴木主任',
-      estimatedAmount: 45000,
-      status: 'completed',
-      hasReport: true,
-      hasExpenseReport: true,
-      reportSubmitted: false,
-      expenseReportSubmitted: false
-    },
-    {
-      id: 'BT-2024-004',
-      title: '名古屋出張',
-      purpose: 'システム導入支援',
-      startDate: '2024-07-10',
-      endDate: '2024-07-12',
-      location: '愛知県名古屋市',
-      visitTarget: '中部システム株式会社',
-      companions: '',
-      estimatedAmount: 38000,
-      status: 'completed',
-      hasReport: true,
-      hasExpenseReport: true,
-      reportSubmitted: true,
-      expenseReportSubmitted: true
+  const { user } = useAuth();
+  const { 
+    documents, 
+    isLoading, 
+    error, 
+    searchDocuments, 
+    deleteDocument, 
+    refreshDocuments 
+  } = useDocumentManagement();
+
+  useEffect(() => {
+    if (user) {
+      loadDocuments();
     }
-  ]);
+  }, [user]);
+
+  const loadDocuments = async () => {
+    await searchDocuments({
+      searchTerm: searchTerm || undefined,
+      category: categoryFilter !== 'all' ? categoryFilter : undefined
+    });
+  };
+
+  useEffect(() => {
+    loadDocuments();
+  }, [searchTerm, categoryFilter, statusFilter]);
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
   };
 
-  // 各カードの件数を計算
-  const reportCreationCount = businessTrips.filter(trip => 
-    trip.status === 'completed' && !trip.hasReport
-  ).length;
-
-  const expenseReportCreationCount = businessTrips.filter(trip => 
-    trip.hasReport && !trip.hasExpenseReport
-  ).length;
-
-  const submittedCount = businessTrips.filter(trip => 
-    trip.reportSubmitted && trip.expenseReportSubmitted
-  ).length;
-
-  const createBusinessReport = (businessTripId: string) => {
-    localStorage.setItem('editingBusinessTripId', businessTripId);
-    localStorage.setItem('editingDocumentType', 'business-report');
-    onNavigate('document-editor');
-  };
-
-  const createExpenseReport = (businessTripId: string) => {
-    localStorage.setItem('editingBusinessTripId', businessTripId);
-    localStorage.setItem('editingDocumentType', 'expense-report');
-    onNavigate('document-editor');
-  };
-
-  const handleReportComplete = (businessTripId: string) => {
-    // 出張報告書作成完了時の処理
-    setBusinessTrips(prev => prev.map(trip => 
-      trip.id === businessTripId ? { ...trip, hasReport: true } : trip
-    ));
-    setCurrentBusinessTripId(businessTripId);
-    setShowReportCompleteModal(true);
-  };
-
-  const handleExpenseReportComplete = (businessTripId: string) => {
-    // 出張経費精算書作成完了時の処理
-    setBusinessTrips(prev => prev.map(trip => 
-      trip.id === businessTripId ? { ...trip, hasExpenseReport: true } : trip
-    ));
-    setCurrentBusinessTripId(businessTripId);
-    setShowExpenseCompleteModal(true);
-  };
-
-  const handleProceedToExpenseReport = () => {
-    setShowReportCompleteModal(false);
-    createExpenseReport(currentBusinessTripId);
-  };
-
-  const handleSubmitDocuments = () => {
+  const handleLaterAction = () => {
+    setShowBusinessTripCompleteModal(false);
     setShowExpenseCompleteModal(false);
-    setBusinessTrips(prev => prev.map(trip => 
-      trip.id === currentBusinessTripId 
-        ? { ...trip, reportSubmitted: true, expenseReportSubmitted: true } 
-        : trip
-    ));
-    alert('報告書と精算書が提出されました！');
   };
 
-  const handleLaterAction = (modalType: 'report' | 'expense') => {
-    if (modalType === 'report') {
-      setShowReportCompleteModal(false);
-    } else {
-      setShowExpenseCompleteModal(false);
+  const handleDocumentAction = (action: string, document: any) => {
+    setSelectedDocument(document);
+    if (action === 'view') {
+      onNavigate('document-preview', document.id);
+    } else if (action === 'edit') {
+      onNavigate('document-editor', document.id);
+    } else if (action === 'delete') {
+      if (confirm('この文書を削除してもよろしいですか？')) {
+        deleteDocument(document.id);
+      }
     }
   };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'approved': return 'bg-green-100 text-green-800';
+      case 'rejected': return 'bg-red-100 text-red-800';
+      case 'returned': return 'bg-orange-100 text-orange-800';
+      case 'draft': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'pending': return '承認待ち';
+      case 'approved': return '承認済み';
+      case 'rejected': return '却下';
+      case 'returned': return '差し戻し';
+      case 'draft': return '下書き';
+      default: return status;
+    }
+  };
+
+  const getCategoryLabel = (category: string) => {
+    switch (category) {
+      case 'receipt': return '領収書';
+      case 'document': return '文書';
+      case 'other': return 'その他';
+      default: return category;
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative overflow-hidden">
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-navy-600 mx-auto mb-4"></div>
+            <p className="text-slate-600">文書データを読み込み中...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative overflow-hidden">
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <p className="text-red-600 mb-4">エラーが発生しました</p>
+            <p className="text-slate-600 mb-4">{error}</p>
+            <button
+              onClick={refreshDocuments}
+              className="px-4 py-2 bg-navy-600 text-white rounded-lg hover:bg-navy-700 transition-colors"
+            >
+              再試行
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative overflow-hidden">
@@ -196,211 +191,155 @@ function DocumentManagement({ onNavigate }: DocumentManagementProps) {
           <div className="flex-1 overflow-auto p-4 lg:p-6 relative z-10">
             <div className="max-w-7xl mx-auto">
               {/* ヘッダー */}
-              <div className="mb-8">
-                <h1 className="text-3xl lg:text-4xl font-bold text-slate-800 mb-2">出張精算</h1>
-                <p className="text-slate-600">出張報告書と経費精算書の作成・管理</p>
-              </div>
-
-              {/* 3つのメインカード */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                {/* 報告書作成カード */}
-                <div className="backdrop-blur-xl bg-white/20 rounded-xl p-6 border border-white/30 shadow-xl text-center hover:bg-white/30 transition-all duration-300">
-                  <div className="w-16 h-16 bg-gradient-to-br from-emerald-600 to-emerald-800 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                    <CheckCircle className="w-8 h-8 text-white" />
-                  </div>
-                  <h3 className="text-xl font-bold text-slate-800 mb-2">報告書作成</h3>
-                  <p className="text-3xl font-bold text-emerald-600 mb-2">{reportCreationCount}件</p>
-                  <p className="text-sm text-slate-600">精算書作成可能</p>
-                </div>
-
-                {/* 精算書作成カード */}
-                <div className="backdrop-blur-xl bg-white/20 rounded-xl p-6 border border-white/30 shadow-xl text-center hover:bg-white/30 transition-all duration-300">
-                  <div className="w-16 h-16 bg-gradient-to-br from-amber-600 to-amber-800 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                    <Clock className="w-8 h-8 text-white" />
-                  </div>
-                  <h3 className="text-xl font-bold text-slate-800 mb-2">精算書作成</h3>
-                  <p className="text-3xl font-bold text-amber-600 mb-2">{expenseReportCreationCount}件</p>
-                  <p className="text-sm text-slate-600">提出待ち</p>
-                </div>
-
-                {/* 提出済カード */}
-                <div className="backdrop-blur-xl bg-white/20 rounded-xl p-6 border border-white/30 shadow-xl text-center hover:bg-white/30 transition-all duration-300">
-                  <div className="w-16 h-16 bg-gradient-to-br from-purple-600 to-purple-800 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-                    <CheckCircle className="w-8 h-8 text-white" />
-                  </div>
-                  <h3 className="text-xl font-bold text-slate-800 mb-2">提出済</h3>
-                  <p className="text-3xl font-bold text-purple-600 mb-2">{submittedCount}件</p>
-                  <p className="text-sm text-slate-600">承認待ち・完了</p>
-                </div>
-              </div>
-
-              {/* 報告書作成が必要な出張一覧 */}
-              {reportCreationCount > 0 && (
-                <div className="backdrop-blur-xl bg-white/20 rounded-xl p-6 border border-white/30 shadow-xl mb-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-emerald-600 to-emerald-800 rounded-xl flex items-center justify-center shadow-lg">
-                        <CheckCircle className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-bold text-slate-800">報告書作成</h2>
-                        <p className="text-slate-600 text-sm">報告書作成が必要な出張</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {businessTrips.filter(trip => trip.status === 'completed' && !trip.hasReport).map((trip) => (
-                      <div
-                        key={trip.id}
-                        className="backdrop-blur-xl bg-white/30 rounded-lg p-4 border border-white/30 shadow-lg hover:shadow-xl transition-all duration-300 hover:bg-white/40 cursor-pointer"
-                        onClick={() => createBusinessReport(trip.id)}
-                      >
-                        <div className="mb-3">
-                          <h3 className="font-semibold text-slate-800 mb-1">{trip.title}</h3>
-                          <div className="flex items-center space-x-2 text-xs text-slate-600">
-                            <Calendar className="w-3 h-3" />
-                            <span>{trip.startDate} ～ {trip.endDate}</span>
-                          </div>
-                          <div className="flex items-center space-x-2 text-xs text-slate-600 mt-1">
-                            <MapPin className="w-3 h-3" />
-                            <span>{trip.location}</span>
-                          </div>
-                        </div>
-                        
-                        <div className="text-xs text-slate-500 mb-3">
-                          <p className="truncate">{trip.purpose}</p>
-                        </div>
-                        
-                        <div className="flex items-center justify-between">
-                          <span className="px-2 py-1 rounded-full text-xs font-medium text-emerald-700 bg-emerald-100">
-                            報告書未作成
-                          </span>
-                          <Plus className="w-4 h-4 text-slate-500" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* 精算書作成が必要な出張一覧 */}
-              {expenseReportCreationCount > 0 && (
-                <div className="backdrop-blur-xl bg-white/20 rounded-xl p-6 border border-white/30 shadow-xl mb-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-amber-600 to-amber-800 rounded-xl flex items-center justify-center shadow-lg">
-                        <Clock className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-bold text-slate-800">精算書作成</h2>
-                        <p className="text-slate-600 text-sm">精算書作成が必要な出張</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {businessTrips.filter(trip => trip.hasReport && !trip.hasExpenseReport).map((trip) => (
-                      <div
-                        key={trip.id}
-                        className="backdrop-blur-xl bg-white/30 rounded-lg p-4 border border-white/30 shadow-lg hover:shadow-xl transition-all duration-300 hover:bg-white/40 cursor-pointer"
-                        onClick={() => createExpenseReport(trip.id)}
-                      >
-                        <div className="mb-3">
-                          <h3 className="font-semibold text-slate-800 mb-1">{trip.title}</h3>
-                          <div className="flex items-center space-x-2 text-xs text-slate-600">
-                            <Calendar className="w-3 h-3" />
-                            <span>{trip.startDate} ～ {trip.endDate}</span>
-                          </div>
-                          <div className="flex items-center space-x-2 text-xs text-slate-600 mt-1">
-                            <Building className="w-3 h-3" />
-                            <span>{trip.visitTarget}</span>
-                          </div>
-                        </div>
-                        
-                        <div className="text-xs text-slate-500 mb-3">
-                          <p>予定日当: ¥{trip.estimatedAmount.toLocaleString()}</p>
-                        </div>
-                        
-                        <div className="flex items-center justify-between">
-                          <span className="px-2 py-1 rounded-full text-xs font-medium text-amber-700 bg-amber-100">
-                            精算書未作成
-                          </span>
-                          <Plus className="w-4 h-4 text-slate-500" />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* 提出済一覧 */}
-              <div className="backdrop-blur-xl bg-white/20 rounded-xl p-6 border border-white/30 shadow-xl">
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-purple-800 rounded-xl flex items-center justify-center shadow-lg">
-                      <CheckCircle className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <h2 className="text-xl font-bold text-slate-800">提出済</h2>
-                      <p className="text-slate-600 text-sm">承認待ち・承認完了の書類</p>
-                    </div>
-                  </div>
+              <div className="flex items-center justify-between mb-8">
+                <h1 className="text-2xl lg:text-3xl font-bold text-slate-800">文書管理</h1>
+                <div className="flex space-x-3">
                   <button
-                    onClick={() => onNavigate('past-applications-search')}
-                    className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-slate-600 to-slate-800 text-white rounded-lg font-medium hover:from-slate-700 hover:to-slate-900 transition-all duration-200"
+                    onClick={() => onNavigate('document-creation', 'business-trip')}
+                    className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-800 text-white rounded-lg font-medium hover:from-blue-700 hover:to-blue-900 transition-all duration-200"
                   >
-                    <FileText className="w-4 h-4" />
-                    <span>過去の申請を確認する</span>
+                    <Plus className="w-4 h-4" />
+                    <span>出張報告書作成</span>
+                  </button>
+                  <button
+                    onClick={() => onNavigate('document-creation', 'expense')}
+                    className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-green-600 to-green-800 text-white rounded-lg font-medium hover:from-green-700 hover:to-green-900 transition-all duration-200"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>経費精算書作成</span>
                   </button>
                 </div>
+              </div>
 
-                {submittedCount > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {businessTrips.filter(trip => trip.reportSubmitted && trip.expenseReportSubmitted).map((trip) => (
-                      <div
-                        key={trip.id}
-                        className="backdrop-blur-xl bg-white/30 rounded-lg p-4 border border-white/30 shadow-lg"
-                      >
-                        <div className="mb-3">
-                          <h3 className="font-semibold text-slate-800 mb-1">{trip.title}</h3>
-                          <div className="flex items-center space-x-2 text-xs text-slate-600">
-                            <Calendar className="w-3 h-3" />
-                            <span>{trip.startDate} ～ {trip.endDate}</span>
+              {/* フィルター */}
+              <div className="backdrop-blur-xl bg-white/20 rounded-xl p-4 border border-white/30 shadow-xl mb-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* 検索 */}
+                  <div className="relative">
+                    <FileText className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+                    <input
+                      type="text"
+                      placeholder="ファイル名、説明で検索..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-white/80 backdrop-blur-sm border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
+                    />
+                  </div>
+
+                  {/* カテゴリフィルター */}
+                  <div>
+                    <select
+                      value={categoryFilter}
+                      onChange={(e) => setCategoryFilter(e.target.value)}
+                      className="w-full px-4 py-2 bg-white/80 backdrop-blur-sm border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
+                    >
+                      <option value="all">全てのカテゴリ</option>
+                      <option value="receipt">領収書</option>
+                      <option value="document">文書</option>
+                      <option value="other">その他</option>
+                    </select>
+                  </div>
+
+                  {/* ステータスフィルター */}
+                  <div>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="w-full px-4 py-2 bg-white/80 backdrop-blur-sm border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
+                    >
+                      <option value="all">全てのステータス</option>
+                      <option value="pending">承認待ち</option>
+                      <option value="approved">承認済み</option>
+                      <option value="rejected">却下</option>
+                      <option value="returned">差し戻し</option>
+                      <option value="draft">下書き</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 文書一覧 */}
+              <div className="grid gap-6">
+                {documents.length === 0 ? (
+                  <div className="text-center py-12">
+                    <FileText className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                    <p className="text-slate-500 text-lg">文書がありません</p>
+                    <p className="text-slate-400">新規作成またはアップロードで文書を追加してください</p>
+                  </div>
+                ) : (
+                  documents.map((document) => (
+                    <div key={document.id} className="backdrop-blur-xl bg-white/20 rounded-xl p-6 border border-white/30 shadow-xl">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2">
+                            <h3 className="text-xl font-semibold text-slate-800">
+                              {document.file_name}
+                            </h3>
+                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(document.application?.status || 'draft')}`}>
+                              {getStatusLabel(document.application?.status || 'draft')}
+                            </span>
+                            <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                              {getCategoryLabel(document.category || 'other')}
+                            </span>
                           </div>
-                          <div className="flex items-center space-x-2 text-xs text-slate-600 mt-1">
-                            <Building className="w-3 h-3" />
-                            <span>{trip.visitTarget}</span>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-slate-600">
+                            <div>
+                              <span className="font-medium">申請者:</span> {document.uploaded_by_profile?.full_name || '不明'}
+                            </div>
+                                                         <div>
+                               <span className="font-medium">部署:</span> {document.application?.department_id || '不明'}
+                             </div>
+                                                         <div>
+                               <span className="font-medium">ファイルサイズ:</span> {formatFileSize(document.file_size || 0)}
+                             </div>
+                            <div>
+                              <span className="font-medium">ファイルタイプ:</span> {document.file_type}
+                            </div>
+                            <div>
+                              <span className="font-medium">アップロード日:</span> {new Date(document.created_at).toLocaleDateString('ja-JP')}
+                            </div>
+                                                         {/* 説明フィールドは現在サポートされていません */}
                           </div>
                         </div>
-                        
-                        <div className="text-xs text-slate-500 mb-3">
-                          <p>予定日当: ¥{trip.estimatedAmount.toLocaleString()}</p>
-                        </div>
-                        
-                        <div className="flex items-center justify-between">
-                          <span className="px-2 py-1 rounded-full text-xs font-medium text-purple-700 bg-purple-100">
-                            提出済
-                          </span>
+                        <div className="flex space-x-2">
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              alert('プレビュー画面に移動します');
-                            }}
-                            className="p-1 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded transition-colors"
+                            onClick={() => handleDocumentAction('view', document)}
+                            className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-all duration-200"
+                            title="表示"
                           >
-                            <Eye className="w-3 h-3" />
+                            <Eye className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDocumentAction('edit', document)}
+                            className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-all duration-200"
+                            title="編集"
+                          >
+                            <Edit className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleDocumentAction('delete', document)}
+                            className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-all duration-200"
+                            title="削除"
+                          >
+                            <Trash2 className="w-5 h-5" />
                           </button>
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <FileText className="w-16 h-16 text-slate-400 mx-auto mb-4" />
-                    <p className="text-slate-600 text-lg font-medium mb-2">提出済みの書類はありません</p>
-                    <p className="text-slate-500">報告書と精算書を作成・提出すると、ここに表示されます</p>
-                  </div>
+                      
+                      <div className="flex items-center justify-between text-sm text-slate-500">
+                        <div className="flex items-center space-x-4">
+                          <span>作成日: {new Date(document.created_at).toLocaleDateString('ja-JP')}</span>
+                                                     <span>更新日: {new Date(document.created_at).toLocaleDateString('ja-JP')}</span>
+                        </div>
+                        <div className="flex space-x-2">
+                          <button className="flex items-center space-x-1 px-3 py-1 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-all duration-200">
+                            <Download className="w-4 h-4" />
+                            <span>ダウンロード</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
                 )}
               </div>
             </div>
@@ -408,60 +347,54 @@ function DocumentManagement({ onNavigate }: DocumentManagementProps) {
         </div>
       </div>
 
-      {/* 出張報告書完了モーダル */}
-      {showReportCompleteModal && (
+      {/* 出張完了モーダル */}
+      {showBusinessTripCompleteModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-8 max-w-md w-full">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle className="w-8 h-8 text-emerald-600" />
-              </div>
-              <h3 className="text-xl font-semibold text-slate-800 mb-2">出張報告書作成完了</h3>
-              <p className="text-slate-600">続けて出張経費精算書を作成しますか？</p>
-            </div>
-            
-            <div className="flex flex-col gap-3">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">出張完了</h3>
+            <p className="text-slate-600 mb-6">出張が完了しました。報告書の作成をお勧めします。</p>
+            <div className="flex justify-end space-x-3">
               <button
-                onClick={handleProceedToExpenseReport}
-                className="w-full px-6 py-3 bg-gradient-to-r from-emerald-600 to-emerald-800 text-white rounded-lg font-medium hover:from-emerald-700 hover:to-emerald-900 transition-all duration-200"
+                onClick={handleLaterAction}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
               >
-                出張経費精算書の作成に進む
+                後で
               </button>
               <button
-                onClick={() => handleLaterAction('report')}
-                className="w-full px-6 py-3 bg-white border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-all duration-200"
+                onClick={() => {
+                  setShowBusinessTripCompleteModal(false);
+                  onNavigate('document-creation', 'business-trip');
+                }}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
               >
-                あとで作成
+                報告書作成
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 出張経費精算書完了モーダル */}
+      {/* 経費完了モーダル */}
       {showExpenseCompleteModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-8 max-w-md w-full">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CheckCircle className="w-8 h-8 text-amber-600" />
-              </div>
-              <h3 className="text-xl font-semibold text-slate-800 mb-2">出張経費精算書作成完了</h3>
-              <p className="text-slate-600">報告書と精算書を提出しますか？</p>
-            </div>
-            
-            <div className="flex flex-col gap-3">
+          <div className="bg-white rounded-xl p-6 max-w-md w-full">
+            <h3 className="text-lg font-semibold text-slate-800 mb-4">経費精算完了</h3>
+            <p className="text-slate-600 mb-6">経費精算が完了しました。精算書の作成をお勧めします。</p>
+            <div className="flex justify-end space-x-3">
               <button
-                onClick={handleSubmitDocuments}
-                className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-800 text-white rounded-lg font-medium hover:from-purple-700 hover:to-purple-900 transition-all duration-200"
+                onClick={handleLaterAction}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 transition-colors"
               >
-                報告書と精算書を提出
+                後で
               </button>
               <button
-                onClick={() => handleLaterAction('expense')}
-                className="w-full px-6 py-3 bg-white border border-slate-300 text-slate-700 rounded-lg font-medium hover:bg-slate-50 transition-all duration-200"
+                onClick={() => {
+                  setShowExpenseCompleteModal(false);
+                  onNavigate('document-creation', 'expense');
+                }}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
               >
-                あとで提出
+                精算書作成
               </button>
             </div>
           </div>

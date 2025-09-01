@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Mail, Lock, Eye, EyeOff, UserPlus, ArrowLeft, User, Building, Phone, Briefcase } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface RegisterProps {
   onNavigate: (view: string) => void;
@@ -39,10 +39,10 @@ function Register({ onNavigate }: RegisterProps) {
     const result = await registerUser({
       email: formData.email,
       password: formData.password,
-      name: formData.name,
-      company: formData.company,
+      full_name: formData.name,
+      company_name: formData.company,
       position: formData.position,
-      phone: formData.phone
+      phone_number: formData.phone
     });
 
     if (result.success) {

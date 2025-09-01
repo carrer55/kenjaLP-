@@ -1,13 +1,20 @@
 import React, { useState } from 'react';
-import { Calendar, MapPin, Upload, Calculator, Save } from 'lucide-react';
+import { Calendar, MapPin, Upload, Calculator, Save, AlertCircle } from 'lucide-react';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import { useApplications } from '../hooks/useApplications';
+import { useFileUpload } from '../hooks/useFileUpload';
+import { useAuth } from '../contexts/AuthContext';
 
 interface BusinessTripApplicationProps {
   onNavigate: (view: 'dashboard' | 'business-trip' | 'expense') => void;
 }
 
 function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
+  const { user } = useAuth();
+  const { createApplication, isLoading: isCreating, error: createError } = useApplications();
+  const { uploadFile, isUploading, error: uploadError } = useFileUpload();
+  
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [formData, setFormData] = useState({
     title: '',
@@ -28,6 +35,8 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
   });
 
   const [dragActive, setDragActive] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<Array<{ path: string; url: string; name: string }>>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 出張日当の自動計算（1日あたり5,000円と仮定）
   const calculateDailyAllowance = () => {
@@ -70,44 +79,95 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
     
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const files = Array.from(e.dataTransfer.files);
-      setFormData(prev => ({
-        ...prev,
-        attachments: [...prev.attachments, ...files]
-      }));
+      await handleFileUpload(files);
     }
   };
 
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const files = Array.from(e.target.files);
-      setFormData(prev => ({
-        ...prev,
-        attachments: [...prev.attachments, ...files]
-      }));
+      await handleFileUpload(files);
+    }
+  };
+
+  const handleFileUpload = async (files: File[]) => {
+    if (!user) return;
+    
+    try {
+      for (const file of files) {
+        const uploadedFile = await uploadFile(file, {
+          bucket: 'documents',
+          userId: user.id,
+          folder: 'business-trip-attachments'
+        });
+        
+        setUploadedFiles(prev => [...prev, {
+          path: uploadedFile.path,
+          url: uploadedFile.url,
+          name: uploadedFile.name
+        }]);
+      }
+    } catch (error) {
+      console.error('ファイルアップロードエラー:', error);
     }
   };
 
   const removeFile = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      attachments: prev.attachments.filter((_, i) => i !== index)
-    }));
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // ここで申請データを送信
-    console.log('出張申請データ:', formData);
-    alert('出張申請が送信されました！');
-    onNavigate('dashboard');
+  const handleSubmit = async () => {
+    if (!user) return;
+    
+    setIsSubmitting(true);
+    try {
+      // 申請データの作成
+      const applicationData = {
+        applicant_id: user.id,
+        department_id: user.profile?.department_id || null,
+        title: formData.title,
+        type: 'business_trip_request' as const,
+        status: 'draft',
+        total_amount: formData.estimatedExpenses.total,
+        metadata: {
+          purpose: formData.purpose,
+          start_date: formData.startDate,
+          end_date: formData.endDate,
+          location: formData.location,
+          visit_target: formData.visitTarget,
+          companions: formData.companions,
+          estimated_expenses: formData.estimatedExpenses
+        }
+      };
+
+      // 申請の作成
+      const application = await createApplication(applicationData);
+
+      // 出張詳細の作成
+      if (application) {
+        // ここでbusiness_trip_detailsテーブルにもデータを保存
+        // 現在のuseApplicationsフックでは、この部分は別途実装が必要
+      }
+
+      // 成功時の処理
+      alert('出張申請が正常に保存されました');
+      onNavigate('dashboard');
+    } catch (error) {
+      console.error('申請保存エラー:', error);
+      alert('申請の保存に失敗しました');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+
 
   const onBack = () => {
     onNavigate('dashboard');
@@ -149,7 +209,7 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
           <div className="flex-1 overflow-auto p-4 lg:p-6 relative z-10">
             <div className="max-w-4xl mx-auto">
               <h1 className="text-2xl lg:text-3xl font-bold text-slate-800 mb-8">出張申請</h1>
-              <form onSubmit={handleSubmit} className="space-y-6">
+              <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="space-y-6">
                 {/* 基本情報 */}
                 <div className="backdrop-blur-xl bg-white/20 rounded-xl p-6 border border-white/30 shadow-xl">
                   <h2 className="text-xl font-semibold text-slate-800 mb-4">基本情報</h2>
@@ -318,10 +378,10 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
                     </label>
                   </div>
 
-                  {formData.attachments.length > 0 && (
+                  {uploadedFiles.length > 0 && (
                     <div className="mt-4 space-y-2">
                       <p className="text-sm font-medium text-slate-700">添付ファイル:</p>
-                      {formData.attachments.map((file, index) => (
+                      {uploadedFiles.map((file, index) => (
                         <div key={index} className="flex items-center justify-between bg-white/30 rounded-lg p-3 backdrop-blur-sm">
                           <span className="text-sm text-slate-700">{file.name}</span>
                           <button
@@ -333,6 +393,16 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
                           </button>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  
+                  {/* エラー表示 */}
+                  {(createError || uploadError) && (
+                    <div className="mt-4 p-3 bg-red-100 border border-red-300 rounded-lg flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-red-500" />
+                      <span className="text-red-700 text-sm">
+                        {createError || uploadError}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -374,11 +444,13 @@ function BusinessTripApplication({ onNavigate }: BusinessTripApplicationProps) {
                     キャンセル
                   </button>
                   <button
-                    type="submit"
-                    className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-navy-700 to-navy-900 hover:from-navy-800 hover:to-navy-950 text-white rounded-lg font-medium shadow-xl hover:shadow-2xl transition-all duration-200 transform hover:scale-105"
+                    type="button"
+                    onClick={handleSubmit}
+                    disabled={isSubmitting || isCreating}
+                    className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-navy-700 to-navy-900 hover:from-navy-800 hover:to-navy-950 text-white rounded-lg font-medium shadow-xl hover:shadow-2xl transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Save className="w-5 h-5" />
-                    <span>申請を送信</span>
+                    <span>{isSubmitting || isCreating ? '保存中...' : '申請を送信'}</span>
                   </button>
                 </div>
               </form>

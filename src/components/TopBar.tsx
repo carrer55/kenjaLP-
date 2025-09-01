@@ -1,5 +1,8 @@
-import React from 'react';
-import { Bell, HelpCircle, MessageCircle, User, Menu } from 'lucide-react';
+import React, { useState } from 'react';
+import { Bell, HelpCircle, MessageCircle, User, Menu, LogOut } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { useNotifications } from '../hooks/useNotifications';
+import NotificationCenter from './NotificationCenter';
 
 interface TopBarProps {
   onMenuClick: () => void;
@@ -7,13 +10,9 @@ interface TopBarProps {
 }
 
 function TopBar({ onMenuClick, onNavigate }: TopBarProps) {
-  // ユーザーのプラン情報を取得（実際の実装では、ユーザー情報から取得）
-  const getCurrentPlan = () => {
-    const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
-    return userProfile.currentPlan || 'Pro'; // デフォルトはPro
-  };
-
-  const currentPlan = getCurrentPlan();
+  const { userPlan, logout, profile } = useAuth();
+  const { unreadCount } = useNotifications();
+  const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
 
   return (
     <div className="h-16 backdrop-blur-xl bg-white/10 border-b border-white/20 flex items-center justify-between px-4 lg:px-6 shadow-xl relative overflow-hidden">
@@ -34,10 +33,15 @@ function TopBar({ onMenuClick, onNavigate }: TopBarProps) {
         <div className="flex items-center space-x-1 lg:space-x-2">
           <div className="relative group">
             <button 
-              onClick={() => onNavigate && onNavigate('notification-history')}
-              className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-all duration-200 backdrop-blur-sm hover:shadow-lg"
+              onClick={() => setIsNotificationCenterOpen(true)}
+              className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-all duration-200 backdrop-blur-sm hover:shadow-lg relative"
             >
               <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
             </button>
             {/* ツールチップ */}
             <div className="absolute right-full mr-2 top-1/2 transform -translate-y-1/2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
@@ -72,10 +76,46 @@ function TopBar({ onMenuClick, onNavigate }: TopBarProps) {
             </div>
           </div>
           <div className="w-20 h-10 bg-gradient-to-br from-navy-600 to-navy-800 rounded-full flex items-center justify-center ml-2 shadow-lg px-4">
-            <span className="text-white text-sm font-bold">{currentPlan}</span>
+            <span className="text-white text-sm font-bold">{userPlan}</span>
+          </div>
+          
+          {/* ユーザーメニュー */}
+          <div className="relative group">
+            <button 
+              onClick={() => onNavigate && onNavigate('my-page')}
+              className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-all duration-200 backdrop-blur-sm hover:shadow-lg"
+            >
+              <User className="w-5 h-5" />
+            </button>
+            {/* ツールチップ */}
+            <div className="absolute right-full mr-2 top-1/2 transform -translate-y-1/2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
+              {profile?.full_name || 'マイページ'}
+              <div className="absolute left-full top-1/2 transform -translate-y-1/2 w-0 h-0 border-l-4 border-l-slate-800 border-t-2 border-t-transparent border-b-2 border-b-transparent"></div>
+            </div>
+          </div>
+          
+          {/* ログアウトボタン */}
+          <div className="relative group">
+            <button 
+              onClick={logout}
+              className="p-2 text-slate-600 hover:text-red-600 hover:bg-red-50/30 rounded-lg transition-all duration-200 backdrop-blur-sm hover:shadow-lg"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+            {/* ツールチップ */}
+            <div className="absolute right-full mr-2 top-1/2 transform -translate-y-1/2 px-2 py-1 bg-slate-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50">
+              ログアウト
+              <div className="absolute left-full top-1/2 transform -translate-y-1/2 w-0 h-0 border-l-4 border-l-slate-800 border-t-2 border-t-transparent border-b-2 border-b-transparent"></div>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* 通知センター */}
+      <NotificationCenter 
+        isOpen={isNotificationCenterOpen}
+        onClose={() => setIsNotificationCenterOpen(false)}
+      />
     </div>
   );
 }

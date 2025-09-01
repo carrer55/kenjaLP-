@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Search, Filter, Calendar, User, Eye, Clock, CheckCircle, AlertTriangle, XCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ArrowLeft, Search, Filter, Calendar, User, Eye, Clock, CheckCircle, AlertTriangle, XCircle, AlertCircle } from 'lucide-react';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import { useAdminManagement } from '../hooks/useAdminManagement';
+import { useAuth } from '../contexts/AuthContext';
 
 interface AdminApplicationListProps {
   onNavigate: (view: string) => void;
@@ -9,14 +11,14 @@ interface AdminApplicationListProps {
 
 interface Application {
   id: string;
-  type: 'business-trip' | 'expense';
-  category: 'application' | 'settlement';
+  type: string;
+  category: string;
   title: string;
   applicant: string;
   department: string;
   amount: number;
   submittedDate: string;
-  status: 'pending' | 'approved' | 'rejected' | 'on_hold';
+  status: string;
   approver: string;
   purpose?: string;
   startDate?: string;
@@ -29,128 +31,69 @@ function AdminApplicationList({ onNavigate }: AdminApplicationListProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
+  const { user } = useAuth();
+  const { 
+    applications, 
+    isLoading, 
+    error, 
+    searchApplications, 
+    refreshData 
+  } = useAdminManagement();
 
   // ローカルストレージから選択されたカテゴリとステータスを取得
   const selectedCategory = localStorage.getItem('adminSelectedCategory') as 'application' | 'settlement' || 'application';
   const selectedStatus = localStorage.getItem('adminSelectedStatus') as 'pending' | 'approved' || 'pending';
 
-  const applications: Application[] = [
-    {
-      id: 'BT-2024-001',
-      type: 'business-trip',
-      category: 'application',
-      title: '東京出張申請',
-      applicant: '田中太郎',
-      department: '営業部',
-      amount: 52500,
-      submittedDate: '2024-07-20',
-      status: 'pending',
-      approver: '佐藤部長',
-      purpose: 'クライアント訪問および新規開拓営業',
-      startDate: '2024-07-25',
-      endDate: '2024-07-27',
-      location: '東京都港区',
-      daysWaiting: 3
-    },
-    {
-      id: 'BT-2024-002',
-      type: 'business-trip',
-      category: 'application',
-      title: '大阪出張申請',
-      applicant: '鈴木次郎',
-      department: '開発部',
-      amount: 35000,
-      submittedDate: '2024-07-15',
-      status: 'approved',
-      approver: '山田経理',
-      purpose: '支社会議参加',
-      startDate: '2024-07-20',
-      endDate: '2024-07-21',
-      location: '大阪府大阪市'
-    },
-    {
-      id: 'EX-2024-001',
-      type: 'expense',
-      category: 'application',
-      title: '交通費申請',
-      applicant: '佐藤花子',
-      department: '総務部',
-      amount: 12800,
-      submittedDate: '2024-07-18',
-      status: 'pending',
-      approver: '田中部長',
-      daysWaiting: 5
-    },
-    {
-      id: 'ST-2024-001',
-      type: 'business-trip',
-      category: 'settlement',
-      title: '東京出張精算',
-      applicant: '高橋美咲',
-      department: '企画部',
-      amount: 48500,
-      submittedDate: '2024-07-10',
-      status: 'pending',
-      approver: '鈴木取締役',
-      daysWaiting: 13
-    },
-    {
-      id: 'ST-2024-002',
-      type: 'expense',
-      category: 'settlement',
-      title: '会議費精算',
-      applicant: '伊藤健一',
-      department: '営業部',
-      amount: 8500,
-      submittedDate: '2024-07-05',
-      status: 'approved',
-      approver: '佐藤部長'
+  useEffect(() => {
+    if (user) {
+      loadApplications();
     }
-  ];
+  }, [user, selectedCategory, selectedStatus]);
 
-  const departments = ['営業部', '総務部', '開発部', '企画部', '経理部'];
+  const loadApplications = async () => {
+    await searchApplications({
+      category: selectedCategory === 'application' ? 'business_trip' : 'expense',
+      statusFilter: selectedStatus,
+      searchTerm: searchTerm || undefined,
+      departmentFilter: departmentFilter !== 'all' ? departmentFilter : undefined
+    });
+  };
+
+  useEffect(() => {
+    loadApplications();
+  }, [searchTerm, departmentFilter, statusFilter]);
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
   };
 
-  const getStatusIcon = (status: string) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
-      case 'approved':
-        return <CheckCircle className="w-4 h-4 text-emerald-600" />;
-      case 'pending':
-        return <Clock className="w-4 h-4 text-amber-600" />;
-      case 'on_hold':
-        return <AlertTriangle className="w-4 h-4 text-orange-600" />;
-      case 'rejected':
-        return <XCircle className="w-4 h-4 text-red-600" />;
-      default:
-        return <Clock className="w-4 h-4 text-slate-400" />;
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      case 'approved': return 'bg-green-100 text-green-800';
+      case 'rejected': return 'bg-red-100 text-red-800';
+      case 'returned': return 'bg-orange-100 text-orange-800';
+      case 'draft': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
   const getStatusLabel = (status: string) => {
-    const labels = {
-      'pending': '承認待ち',
-      'approved': '承認済み',
-      'rejected': '否認',
-      'on_hold': '保留'
-    };
-    return labels[status as keyof typeof labels] || status;
-  };
-
-  const getStatusColor = (status: string) => {
-    const colors = {
-      'pending': 'text-amber-700 bg-amber-100',
-      'approved': 'text-emerald-700 bg-emerald-100',
-      'rejected': 'text-red-700 bg-red-100',
-      'on_hold': 'text-orange-700 bg-orange-100'
-    };
-    return colors[status as keyof typeof colors] || 'text-slate-700 bg-slate-100';
+    switch (status) {
+      case 'pending': return '承認待ち';
+      case 'approved': return '承認済み';
+      case 'rejected': return '却下';
+      case 'returned': return '差し戻し';
+      case 'draft': return '下書き';
+      default: return status;
+    }
   };
 
   const getTypeLabel = (type: string) => {
-    return type === 'business-trip' ? '出張' : '経費';
+    return type === 'business_trip' ? '出張' : '経費';
   };
 
   const getCategoryLabel = (category: string) => {
@@ -163,30 +106,61 @@ function AdminApplicationList({ onNavigate }: AdminApplicationListProps) {
     return `${categoryLabel} - ${statusLabel}`;
   };
 
-  const filteredApplications = applications.filter(app => {
-    // 部門管理者の場合は自部署のみ表示
-    const userProfile = JSON.parse(localStorage.getItem('userProfile') || '{}');
-    const currentUserRole = userProfile.role;
-    const userDepartment = userProfile.departmentName;
-    
-    if (currentUserRole === 'department_admin' && userDepartment && app.department !== userDepartment) {
-      return false;
-    }
-    
-    const matchesCategory = app.category === selectedCategory;
-    const matchesStatus = app.status === selectedStatus;
-    const matchesSearch = app.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         app.applicant.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         app.id.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesDepartment = departmentFilter === 'all' || app.department === departmentFilter;
-    
-    return matchesCategory && matchesStatus && matchesSearch && matchesDepartment;
-  });
+  const filteredApplications = applications.map(app => ({
+    id: app.id,
+    type: app.type,
+    category: selectedCategory,
+    title: app.title,
+    applicant: app.applicant_profile?.full_name || '不明',
+    department: app.department?.name || '不明',
+    amount: app.total_amount || 0,
+    submittedDate: app.created_at,
+    status: app.status,
+    approver: app.current_approver_id || '未設定',
+         purpose: app.business_trip_details?.purpose || '経費申請',
+     startDate: app.business_trip_details?.start_date,
+     endDate: app.business_trip_details?.end_date,
+     location: app.business_trip_details?.location,
+    daysWaiting: app.days_waiting || 0
+  }));
 
   const handleApplicationClick = (applicationId: string) => {
     localStorage.setItem('adminSelectedApplication', applicationId);
     onNavigate('admin-application-detail');
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative overflow-hidden">
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-navy-600 mx-auto mb-4"></div>
+            <p className="text-slate-600">申請データを読み込み中...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative overflow-hidden">
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center">
+            <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <p className="text-red-600 mb-4">エラーが発生しました</p>
+            <p className="text-slate-600 mb-4">{error}</p>
+            <button
+              onClick={refreshData}
+              className="px-4 py-2 bg-navy-600 text-white rounded-lg hover:bg-navy-700 transition-colors"
+            >
+              再試行
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative overflow-hidden">
@@ -215,11 +189,12 @@ function AdminApplicationList({ onNavigate }: AdminApplicationListProps) {
           
           <div className="flex-1 overflow-auto p-4 lg:p-6 relative z-10">
             <div className="max-w-7xl mx-auto">
+              {/* ヘッダー */}
               <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center space-x-4">
                   <button
                     onClick={() => onNavigate('admin-dashboard')}
-                    className="flex items-center space-x-2 px-4 py-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-all duration-200 backdrop-blur-sm"
+                    className="flex items-center space-x-2 text-slate-600 hover:text-slate-800 transition-colors"
                   >
                     <ArrowLeft className="w-5 h-5" />
                     <span>戻る</span>
@@ -230,134 +205,146 @@ function AdminApplicationList({ onNavigate }: AdminApplicationListProps) {
 
               {/* フィルター */}
               <div className="backdrop-blur-xl bg-white/20 rounded-xl p-4 border border-white/30 shadow-xl mb-6">
-                <div className="flex flex-col lg:flex-row gap-4">
-                  <div className="flex-1 relative">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {/* 検索 */}
+                  <div className="relative">
                     <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
                     <input
                       type="text"
-                      placeholder="申請者、タイトル、IDで検索..."
+                      placeholder="申請ID、タイトル、申請者で検索..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-3 bg-white/50 border border-white/40 rounded-lg text-slate-700 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-navy-400 backdrop-blur-xl"
+                      className="w-full pl-10 pr-4 py-2 bg-white/80 backdrop-blur-sm border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
                     />
                   </div>
-                  <select
-                    value={departmentFilter}
-                    onChange={(e) => setDepartmentFilter(e.target.value)}
-                    className="px-4 py-3 bg-white/50 border border-white/40 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-navy-400 backdrop-blur-xl"
-                  >
-                    <option value="all">すべての部署</option>
-                    {departments.map(dept => (
-                      <option key={dept} value={dept}>{dept}</option>
-                    ))}
-                  </select>
+
+                  {/* 部署フィルター */}
+                  <div>
+                    <select
+                      value={departmentFilter}
+                      onChange={(e) => setDepartmentFilter(e.target.value)}
+                      className="w-full px-4 py-2 bg-white/80 backdrop-blur-sm border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
+                    >
+                      <option value="all">全ての部署</option>
+                      <option value="営業部">営業部</option>
+                      <option value="総務部">総務部</option>
+                      <option value="開発部">開発部</option>
+                      <option value="企画部">企画部</option>
+                      <option value="経理部">経理部</option>
+                    </select>
+                  </div>
+
+                  {/* ステータスフィルター */}
+                  <div>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="w-full px-4 py-2 bg-white/80 backdrop-blur-sm border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
+                    >
+                      <option value="all">全てのステータス</option>
+                      <option value="pending">承認待ち</option>
+                      <option value="approved">承認済み</option>
+                      <option value="rejected">却下</option>
+                      <option value="returned">差し戻し</option>
+                      <option value="draft">下書き</option>
+                    </select>
+                  </div>
+
+                  {/* カテゴリフィルター */}
+                  <div>
+                    <select
+                      value={categoryFilter}
+                      onChange={(e) => setCategoryFilter(e.target.value)}
+                      className="w-full px-4 py-2 bg-white/80 backdrop-blur-sm border border-white/30 rounded-lg focus:outline-none focus:ring-2 focus:ring-navy-500 focus:border-transparent"
+                    >
+                      <option value="all">全てのカテゴリ</option>
+                      <option value="business_trip">出張</option>
+                      <option value="expense">経費</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
               {/* 申請一覧 */}
-              <div className="backdrop-blur-xl bg-white/20 rounded-xl border border-white/30 shadow-xl">
-                <div className="p-6 border-b border-white/30">
-                  <h2 className="text-xl font-semibold text-slate-800">
-                    {getPageTitle()} ({filteredApplications.length}件)
-                  </h2>
-                </div>
-
-                <div className="divide-y divide-white/20">
-                  {filteredApplications.length === 0 ? (
-                    <div className="text-center py-16">
-                      <div className={`w-16 h-16 mx-auto mb-4 rounded-xl flex items-center justify-center shadow-lg ${
-                        selectedCategory === 'application' 
-                          ? 'bg-gradient-to-br from-blue-600 to-blue-800' 
-                          : 'bg-gradient-to-br from-purple-600 to-purple-800'
-                      }`}>
-                        {selectedCategory === 'application' ? (
-                          <FileText className="w-8 h-8 text-white" />
-                        ) : (
-                          <Receipt className="w-8 h-8 text-white" />
-                        )}
-                      </div>
-                      <p className="text-slate-600 text-lg font-medium mb-2">
-                        {getPageTitle()}がありません
-                      </p>
-                      <p className="text-slate-500">新しい{getCategoryLabel(selectedCategory)}が提出されると、ここに表示されます</p>
-                    </div>
-                  ) : (
-                    filteredApplications.map((app) => (
-                      <div 
-                        key={app.id} 
-                        className="p-6 hover:bg-white/20 transition-colors cursor-pointer"
-                        onClick={() => handleApplicationClick(app.id)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-3 mb-3">
-                              <h3 className="text-lg font-semibold text-slate-800">{app.title}</h3>
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                app.type === 'business-trip' ? 'text-blue-700 bg-blue-100' : 'text-emerald-700 bg-emerald-100'
-                              }`}>
-                                {getTypeLabel(app.type)}
+              <div className="backdrop-blur-xl bg-white/20 rounded-xl border border-white/30 shadow-xl overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-white/30 border-b border-white/30">
+                      <tr>
+                        <th className="text-left py-4 px-6 font-medium text-slate-700">申請ID</th>
+                        <th className="text-left py-4 px-6 font-medium text-slate-700">タイプ</th>
+                        <th className="text-left py-4 px-6 font-medium text-slate-700">タイトル</th>
+                        <th className="text-left py-4 px-6 font-medium text-slate-700">申請者</th>
+                        <th className="text-left py-4 px-6 font-medium text-slate-700">部署</th>
+                        <th className="text-left py-4 px-6 font-medium text-slate-700">金額</th>
+                        <th className="text-left py-4 px-6 font-medium text-slate-700">提出日</th>
+                        <th className="text-left py-4 px-6 font-medium text-slate-700">ステータス</th>
+                        <th className="text-left py-4 px-6 font-medium text-slate-700">承認者</th>
+                        <th className="text-left py-4 px-6 font-medium text-slate-700">待機日数</th>
+                        <th className="text-center py-4 px-6 font-medium text-slate-700">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredApplications.length === 0 ? (
+                        <tr>
+                          <td colSpan={11} className="text-center py-12 text-slate-500">
+                            {searchTerm || departmentFilter !== 'all' || statusFilter !== 'all' || categoryFilter !== 'all' 
+                              ? '検索条件に一致する申請が見つかりません' 
+                              : '申請がありません'}
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredApplications.map((application) => (
+                          <tr key={application.id} className="border-b border-white/20 hover:bg-white/20 transition-colors">
+                            <td className="py-4 px-6 text-slate-800 font-mono text-sm">{application.id}</td>
+                            <td className="py-4 px-6">
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {getTypeLabel(application.type)}
                               </span>
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(app.status)}`}>
-                                {getStatusLabel(app.status)}
+                            </td>
+                            <td className="py-4 px-6 text-slate-800 font-medium max-w-xs truncate" title={application.title}>
+                              {application.title}
+                            </td>
+                            <td className="py-4 px-6 text-slate-700">{application.applicant}</td>
+                            <td className="py-4 px-6 text-slate-700">{application.department}</td>
+                            <td className="py-4 px-6 text-slate-700 font-medium">
+                              ¥{application.amount.toLocaleString()}
+                            </td>
+                            <td className="py-4 px-6 text-slate-600 text-sm">
+                              {new Date(application.submittedDate).toLocaleDateString('ja-JP')}
+                            </td>
+                            <td className="py-4 px-6">
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(application.status)}`}>
+                                {getStatusLabel(application.status)}
                               </span>
-                            </div>
-                            
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-slate-600 mb-3">
-                              <div className="flex items-center space-x-2">
-                                <User className="w-4 h-4" />
-                                <span>{app.applicant} ({app.department})</span>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <Calendar className="w-4 h-4" />
-                                <span>{new Date(app.submittedDate).toLocaleDateString('ja-JP')}</span>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <span className="font-medium">金額:</span>
-                                <span className="font-bold text-slate-900">¥{app.amount.toLocaleString()}</span>
-                              </div>
-                              {selectedStatus === 'pending' && app.daysWaiting && (
-                                <div className="flex items-center space-x-2">
+                            </td>
+                            <td className="py-4 px-6 text-slate-700">{application.approver}</td>
+                            <td className="py-4 px-6 text-slate-600 text-sm">
+                              {application.daysWaiting > 0 ? (
+                                <span className="inline-flex items-center space-x-1 text-orange-600">
                                   <Clock className="w-4 h-4" />
-                                  <span className={`font-medium ${
-                                    app.daysWaiting > 7 ? 'text-red-600' : 
-                                    app.daysWaiting > 3 ? 'text-amber-600' : 'text-slate-600'
-                                  }`}>
-                                    {app.daysWaiting}日経過
-                                  </span>
-                                </div>
+                                  <span>{application.daysWaiting}日</span>
+                                </span>
+                              ) : (
+                                '-'
                               )}
-                            </div>
-
-                            {app.purpose && (
-                              <p className="text-sm text-slate-600 mb-2">
-                                <span className="font-medium">目的:</span> {app.purpose}
-                              </p>
-                            )}
-
-                            {app.startDate && app.endDate && (
-                              <p className="text-sm text-slate-600">
-                                <span className="font-medium">期間:</span> {app.startDate} ～ {app.endDate}
-                                {app.location && <span className="ml-4"><span className="font-medium">場所:</span> {app.location}</span>}
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="flex items-center space-x-2 ml-4">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleApplicationClick(app.id);
-                              }}
-                              className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-colors"
-                              title="詳細表示"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
+                            </td>
+                            <td className="py-4 px-6">
+                              <div className="flex items-center justify-center space-x-2">
+                                <button
+                                  onClick={() => handleApplicationClick(application.id)}
+                                  className="p-2 text-slate-600 hover:text-slate-800 hover:bg-white/30 rounded-lg transition-colors"
+                                  title="詳細表示"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </div>

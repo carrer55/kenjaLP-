@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../hooks/useAuth';
+import { useAuth } from '../contexts/AuthContext';
 import LandingPage from './LandingPage';
 import Login from './auth/Login';
 import Register from './auth/Register';

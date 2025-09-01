@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ArrowLeft, UserPlus, Mail, Edit, Trash2, Shield, Users, Building, Search, Filter } from 'lucide-react';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
-import { useUserProfile } from './UserProfileProvider';
+import { useUserProfile } from '../hooks/useUserProfile';
 
 interface UserManagementProps {
   onNavigate: (view: string) => void;

@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { Save, Upload, Camera, FileText, Plus, Trash2, CheckCircle, Edit } from 'lucide-react';
+import { Save, Upload, Camera, FileText, Plus, Trash2, CheckCircle, Edit, AlertCircle } from 'lucide-react';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import { useFileUpload } from '../hooks/useFileUpload';
+import { useAuth } from '../contexts/AuthContext';
+import { processReceiptOCR, evaluateOCRConfidence, type OCRResult, type OCRProcessingOptions } from '../lib/ocr';
 
 interface ExpenseApplicationProps {
   onNavigate: (view: 'dashboard' | 'business-trip' | 'expense') => void;
@@ -25,17 +28,30 @@ interface ExpenseItem {
 }
 
 function ExpenseApplication({ onNavigate }: ExpenseApplicationProps) {
+  const { user } = useAuth();
+  const { uploadFile, isUploading, error: uploadError } = useFileUpload();
+  
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
   const [showOCRModal, setShowOCRModal] = useState(false);
   const [currentExpenseId, setCurrentExpenseId] = useState<string>('');
-  const [ocrResult, setOcrResult] = useState({
+  const [ocrResult, setOcrResult] = useState<OCRResult>({
     store: '',
     date: '',
     amount: 0,
     confidence: 0
   });
   const [isProcessingOCR, setIsProcessingOCR] = useState(false);
+  const [uploadedReceipts, setUploadedReceipts] = useState<Array<{ path: string; url: string; name: string }>>([]);
+  const [ocrProgress, setOcrProgress] = useState<{
+    stage: string;
+    progress: number;
+    message: string;
+  }>({
+    stage: '',
+    progress: 0,
+    message: ''
+  });
 
   const categories = ['旅費交通費', '接待交際費', '通信費', '消耗品費', '広告宣伝費', '福利厚生費', '雑費（その他）'];
 
@@ -64,24 +80,76 @@ function ExpenseApplication({ onNavigate }: ExpenseApplicationProps) {
     setExpenses(expenses.filter(expense => expense.id !== id));
   };
 
-  const handleReceiptUpload = (file: File) => {
-    const expenseId = createNewExpenseFromOCR(file);
-    setCurrentExpenseId(expenseId);
-    setIsProcessingOCR(true);
+  const handleReceiptUpload = async (file: File) => {
+    if (!user) return;
     
-    // OCR処理をシミュレート
-    setTimeout(() => {
-      const mockOCRResult = {
-        store: generateMockStoreName(),
-        date: generateMockDate(),
-        amount: Math.floor(Math.random() * 10000) + 500,
-        confidence: Math.floor(Math.random() * 30) + 70 // 70-99%の信頼度
+    try {
+      // ファイルをSupabase Storageにアップロード
+      const uploadedFile = await uploadFile(file, {
+        bucket: 'receipts',
+        userId: user.id,
+        folder: 'expense-receipts'
+      });
+      
+      // アップロードされたファイルを記録
+      setUploadedReceipts(prev => [...prev, {
+        path: uploadedFile.path,
+        url: uploadedFile.url,
+        name: uploadedFile.name
+      }]);
+      
+      // 新しい経費項目を作成
+      const expenseId = createNewExpenseFromOCR(file);
+      setCurrentExpenseId(expenseId);
+      setIsProcessingOCR(true);
+      
+      // OCR処理の進捗を更新
+      setOcrProgress({
+        stage: 'アップロード完了',
+        progress: 20,
+        message: 'ファイルのアップロードが完了しました'
+      });
+      
+      // OCR処理の実行
+      const ocrOptions: OCRProcessingOptions = {
+        language: 'ja',
+        enhance: true,
+        autoCategorize: true
       };
       
-      setOcrResult(mockOCRResult);
-      setIsProcessingOCR(false);
-      setShowOCRModal(true);
-    }, 2000);
+      try {
+        const result = await processReceiptOCR(file, ocrOptions);
+        
+        // 信頼度の再評価
+        result.confidence = evaluateOCRConfidence(result);
+        
+        setOcrResult(result);
+        setIsProcessingOCR(false);
+        setShowOCRModal(true);
+        
+        // 成功時の進捗
+        setOcrProgress({
+          stage: '完了',
+          progress: 100,
+          message: 'OCR処理が完了しました'
+        });
+      } catch (ocrError) {
+        console.error('OCR処理エラー:', ocrError);
+        setIsProcessingOCR(false);
+        
+        // エラー時の進捗
+        setOcrProgress({
+          stage: 'エラー',
+          progress: 0,
+          message: 'OCR処理に失敗しました'
+        });
+        
+        alert('OCR処理に失敗しました。手動で入力してください。');
+      }
+    } catch (error) {
+      console.error('領収書アップロードエラー:', error);
+      alert('領収書のアップロードに失敗しました');
+    }
   };
 
   const generateMockStoreName = () => {
@@ -264,18 +332,51 @@ function ExpenseApplication({ onNavigate }: ExpenseApplicationProps) {
                 </div>
               )}
 
-              {/* OCR処理中の表示 */}
-              {isProcessingOCR && (
-                <div className="backdrop-blur-xl bg-white/20 rounded-xl p-8 border border-white/30 shadow-xl mb-6">
-                  <div className="text-center">
-                    <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-navy-600 to-navy-800 flex items-center justify-center animate-pulse">
-                      <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    </div>
-                    <h3 className="text-xl font-semibold text-slate-800 mb-2">OCR処理中...</h3>
-                    <p className="text-slate-600">領収書から情報を読み取っています</p>
-                  </div>
-                </div>
-              )}
+                             {/* OCR処理中の表示 */}
+               {isProcessingOCR && (
+                 <div className="backdrop-blur-xl bg-white/20 rounded-xl p-8 border border-white/30 shadow-xl mb-6">
+                   <div className="text-center">
+                     <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-navy-600 to-navy-800 flex items-center justify-center animate-pulse">
+                       <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                     </div>
+                     <h3 className="text-xl font-semibold text-slate-800 mb-2">
+                       {ocrProgress.stage === '完了' ? 'OCR処理完了' : 'OCR処理中...'}
+                     </h3>
+                     <p className="text-slate-600 mb-4">{ocrProgress.message}</p>
+                     
+                     {/* 進捗バー */}
+                     <div className="w-full bg-white/30 rounded-full h-3 mb-4">
+                       <div 
+                         className="bg-gradient-to-r from-navy-600 to-navy-800 h-3 rounded-full transition-all duration-300"
+                         style={{ width: `${ocrProgress.progress}%` }}
+                       ></div>
+                     </div>
+                     
+                     {/* 進捗ステップ */}
+                     <div className="flex justify-center space-x-2 text-sm text-slate-600">
+                       <span className={`${ocrProgress.progress >= 20 ? 'text-navy-600 font-medium' : ''}`}>
+                         アップロード
+                       </span>
+                       <span className="text-slate-400">→</span>
+                       <span className={`${ocrProgress.progress >= 40 ? 'text-navy-600 font-medium' : ''}`}>
+                         処理中
+                       </span>
+                       <span className="text-slate-400">→</span>
+                       <span className={`${ocrProgress.progress >= 60 ? 'text-navy-600 font-medium' : ''}`}>
+                         抽出中
+                       </span>
+                       <span className="text-slate-400">→</span>
+                       <span className={`${ocrProgress.progress >= 80 ? 'text-navy-600 font-medium' : ''}`}>
+                         分類中
+                       </span>
+                       <span className="text-slate-400">→</span>
+                       <span className={`${ocrProgress.progress >= 100 ? 'text-navy-600 font-medium' : ''}`}>
+                         完了
+                       </span>
+                     </div>
+                   </div>
+                 </div>
+               )}
 
               {/* 経費項目一覧 */}
               {expenses.length > 0 && (
@@ -565,6 +666,14 @@ function ExpenseApplication({ onNavigate }: ExpenseApplicationProps) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* エラー表示 */}
+      {uploadError && (
+        <div className="fixed top-4 right-4 bg-red-100 border border-red-300 rounded-lg p-3 flex items-center gap-2 z-50">
+          <AlertCircle className="w-4 h-4 text-red-500" />
+          <span className="text-red-700 text-sm">{uploadError}</span>
         </div>
       )}
     </div>

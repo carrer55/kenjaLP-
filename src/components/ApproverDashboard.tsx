@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { Clock, CheckCircle, Pause, Eye, User, Calendar, Building, Filter, Search } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Clock, CheckCircle, Pause, Eye, User, Calendar, Building, Filter, Search, AlertCircle } from 'lucide-react';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
+import { useApprovalWorkflow } from '../hooks/useApprovalWorkflow';
+import { useAuth } from '../contexts/AuthContext';
 
 interface ApproverDashboardProps {
   onNavigate: (view: string) => void;
@@ -22,62 +24,66 @@ interface Application {
 }
 
 function ApproverDashboard({ onNavigate, onShowDetail }: ApproverDashboardProps) {
+  const { user } = useAuth();
+  const { 
+    pendingApprovals, 
+    approvalHistory, 
+    submitApproval, 
+    isLoading, 
+    error 
+  } = useApprovalWorkflow();
+  
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<'pending' | 'on_hold' | 'approved'>('pending');
   const [searchTerm, setSearchTerm] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
+  const [selectedApplication, setSelectedApplication] = useState<string | null>(null);
+  const [approvalComment, setApprovalComment] = useState('');
 
-  // サンプルデータ
-  const applications: Application[] = [
-    {
-      id: 'BT-2024-001',
-      type: 'business-trip',
-      title: '東京出張申請',
-      applicant: '田中太郎',
-      department: '営業部',
-      amount: 52500,
-      submittedDate: '2024-07-20',
-      status: 'pending',
-      priority: 'high',
-      daysWaiting: 3
-    },
-    {
-      id: 'EX-2024-001',
-      type: 'expense',
-      title: '交通費・宿泊費精算',
-      applicant: '佐藤花子',
-      department: '総務部',
-      amount: 12800,
-      submittedDate: '2024-07-18',
-      status: 'pending',
-      priority: 'medium',
-      daysWaiting: 5
-    },
-    {
-      id: 'BT-2024-002',
-      type: 'business-trip',
-      title: '大阪出張申請',
-      applicant: '鈴木次郎',
-      department: '開発部',
-      amount: 35000,
-      submittedDate: '2024-07-15',
-      status: 'on_hold',
-      priority: 'low',
-      daysWaiting: 8
-    },
-    {
-      id: 'EX-2024-002',
-      type: 'expense',
-      title: '会議費精算',
-      applicant: '高橋美咲',
-      department: '企画部',
-      amount: 8500,
-      submittedDate: '2024-07-10',
-      status: 'approved',
-      priority: 'medium',
-      daysWaiting: 0
+  // 承認処理
+  const handleApproval = async (action: 'approve' | 'reject' | 'hold') => {
+    if (!selectedApplication || !user) return;
+    
+    try {
+      await submitApproval({
+        applicationId: selectedApplication,
+        approverId: user.id,
+        action,
+        comment: approvalComment,
+        previousStatus: 'pending',
+        newStatus: action === 'approve' ? 'approved' : action === 'reject' ? 'rejected' : 'on_hold'
+      });
+      
+      // 成功時の処理
+      setSelectedApplication(null);
+      setApprovalComment('');
+      alert(`申請が${action === 'approve' ? '承認' : action === 'reject' ? '却下' : '保留'}されました`);
+    } catch (error) {
+      console.error('承認処理エラー:', error);
+      alert('承認処理に失敗しました');
     }
-  ];
+  };
+
+    // 承認履歴の取得
+  useEffect(() => {
+    if (selectedApplication) {
+      // 承認履歴を取得
+    }
+  }, [selectedApplication]);
+
+  // 実際のデータを使用
+  const applications = pendingApprovals.map(approval => ({
+    id: approval.application.id,
+    type: approval.application.type as 'business-trip' | 'expense',
+    title: approval.application.title,
+    applicant: approval.applicant?.full_name || '不明',
+    department: approval.department?.name || '不明',
+    amount: approval.application.total_amount || 0,
+    submittedDate: new Date(approval.application.created_at).toLocaleDateString(),
+    status: approval.application.status as 'pending' | 'on_hold' | 'approved',
+    priority: approval.application.priority as 'high' | 'medium' | 'low',
+    daysWaiting: Math.ceil((Date.now() - new Date(approval.application.created_at).getTime()) / (1000 * 60 * 60 * 24))
+  }));
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
@@ -329,6 +335,67 @@ function ApproverDashboard({ onNavigate, onShowDetail }: ApproverDashboardProps)
           </div>
         </div>
       </div>
+
+      {/* 承認処理モーダル */}
+      {selectedApplication && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold mb-4">承認処理</h3>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                コメント（任意）
+              </label>
+              <textarea
+                value={approvalComment}
+                onChange={(e) => setApprovalComment(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={3}
+                placeholder="承認・却下・保留の理由を入力してください"
+              />
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                onClick={() => handleApproval('approve')}
+                disabled={isLoading}
+                className="flex-1 bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50"
+              >
+                承認
+              </button>
+              <button
+                onClick={() => handleApproval('reject')}
+                disabled={isLoading}
+                className="flex-1 bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700 disabled:opacity-50"
+              >
+                却下
+              </button>
+              <button
+                onClick={() => handleApproval('hold')}
+                disabled={isLoading}
+                className="flex-1 bg-yellow-600 text-white px-4 py-2 rounded-md hover:bg-yellow-700 disabled:opacity-50"
+              >
+                保留
+              </button>
+            </div>
+
+            <button
+              onClick={() => setSelectedApplication(null)}
+              className="mt-4 w-full px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+            >
+              キャンセル
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* エラー表示 */}
+      {error && (
+        <div className="fixed top-4 right-4 bg-red-100 border border-red-300 rounded-lg p-3 flex items-center gap-2 z-50">
+          <AlertCircle className="w-4 h-4 text-red-500" />
+          <span className="text-red-700 text-sm">{error}</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,45 +1,99 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, BarChart3 } from 'lucide-react';
+import { useStatistics } from '../hooks/useStatistics';
+import { useAuth } from '../contexts/AuthContext';
 
 function StatsCards() {
   const [showEstimatedHistory, setShowEstimatedHistory] = useState(false);
   const [showActualHistory, setShowActualHistory] = useState(false);
+  const { statistics, isLoading, error, refreshStatistics } = useStatistics();
+  const { profile } = useAuth();
 
-  // 今月の精算見込みデータ
-  const currentMonthEstimated = 320000;
-  const previousMonthEstimated = 285000;
-  const estimatedApplicationCount = 12;
+  useEffect(() => {
+    if (profile) {
+      refreshStatistics();
+    }
+  }, [profile, refreshStatistics]);
+
+  // 統計データがない場合のデフォルト値
+  const currentMonthEstimated = statistics?.totalAmount || 0;
+  const previousMonthEstimated = 0; // 前月データは別途取得が必要
+  const estimatedApplicationCount = statistics?.totalApplications || 0;
   
-  // 今月の精算合計データ
-  const currentMonthActual = 285000;
-  const previousMonthActual = 245000;
-  const actualApplicationCount = 8;
+  const currentMonthActual = statistics?.totalAmount || 0;
+  const previousMonthActual = 0;
+  const actualApplicationCount = statistics?.approvedApplications || 0;
   
   // 精算見込みの前月比計算
   const estimatedDifference = currentMonthEstimated - previousMonthEstimated;
-  const estimatedPercentageChange = ((estimatedDifference / previousMonthEstimated) * 100).toFixed(1);
+  const estimatedPercentageChange = previousMonthEstimated > 0 
+    ? ((estimatedDifference / previousMonthEstimated) * 100).toFixed(1)
+    : '0.0';
   const isEstimatedIncrease = estimatedDifference > 0;
 
   // 精算合計の前月比計算
   const actualDifference = currentMonthActual - previousMonthActual;
-  const actualPercentageChange = ((actualDifference / previousMonthActual) * 100).toFixed(1);
+  const actualPercentageChange = previousMonthActual > 0
+    ? ((actualDifference / previousMonthActual) * 100).toFixed(1)
+    : '0.0';
   const isActualIncrease = actualDifference > 0;
 
-  const estimatedHistory = [
-    { month: '2024年6月', amount: 285000, applications: 10 },
-    { month: '2024年5月', amount: 310000, applications: 14 },
-    { month: '2024年4月', amount: 260000, applications: 8 },
-    { month: '2024年3月', amount: 290000, applications: 11 },
-    { month: '2024年2月', amount: 250000, applications: 7 }
-  ];
+  // 月別履歴データを統計フックから取得
+  const estimatedHistory = statistics?.monthlyApplications.map(item => ({
+    month: `${item.month}月`,
+    amount: item.amount,
+    applications: item.count
+  })) || [];
 
-  const actualHistory = [
-    { month: '2024年6月', amount: 245000, applications: 7 },
-    { month: '2024年5月', amount: 280000, applications: 12 },
-    { month: '2024年4月', amount: 230000, applications: 6 },
-    { month: '2024年3月', amount: 260000, applications: 9 },
-    { month: '2024年2月', amount: 220000, applications: 5 }
-  ];
+  const actualHistory = statistics?.monthlyApplications.map(item => ({
+    month: `${item.month}月`,
+    amount: item.amount,
+    applications: item.count
+  })) || [];
+
+  // ローディング状態の表示
+  if (isLoading) {
+    return (
+      <div className="mb-6 lg:mb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="backdrop-blur-xl bg-white/20 rounded-xl p-6 lg:p-8 border border-white/30 shadow-xl">
+            <div className="animate-pulse">
+              <div className="h-6 bg-slate-200 rounded mb-4"></div>
+              <div className="h-12 bg-slate-200 rounded mb-4"></div>
+              <div className="h-4 bg-slate-200 rounded"></div>
+            </div>
+          </div>
+          <div className="backdrop-blur-xl bg-white/20 rounded-xl p-6 lg:p-8 border border-white/30 shadow-xl">
+            <div className="animate-pulse">
+              <div className="h-6 bg-slate-200 rounded mb-4"></div>
+              <div className="h-12 bg-slate-200 rounded mb-4"></div>
+              <div className="h-4 bg-slate-200 rounded"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // エラー状態の表示
+  if (error) {
+    return (
+      <div className="mb-6 lg:mb-8">
+        <div className="backdrop-blur-xl bg-red-50/20 rounded-xl p-6 lg:p-8 border border-red-200/30 shadow-xl">
+          <div className="text-center">
+            <p className="text-red-700 text-lg font-medium mb-2">統計データの取得に失敗しました</p>
+            <p className="text-red-600 text-sm">{error}</p>
+            <button
+              onClick={refreshStatistics}
+              className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            >
+              再試行
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mb-6 lg:mb-8">

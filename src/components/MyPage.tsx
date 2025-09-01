@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Settings, CreditCard, Bell, Users, HelpCircle, Edit, Save, Eye, EyeOff, Link } from 'lucide-react';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
-import { useUserProfile } from './UserProfileProvider';
+import { useUserProfile } from '../hooks/useUserProfile';
 
 interface MyPageProps {
   onNavigate: (view: string) => void;
